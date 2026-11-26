@@ -1,11 +1,13 @@
+import asyncio
 from typing import Iterable
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 import sqlalchemy
-from sqlalchemy import orm
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import event, orm
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from wapang.main import app
 from wapang.app.users.models import User
@@ -20,13 +22,19 @@ def set_test_env():
 
 
 @pytest.fixture(scope="function")
-def db_engine(set_test_env) -> Iterable[sqlalchemy.Engine]:
-    url = "sqlite:///:memory:"
+def db_engine(set_test_env,tmp_path) -> Iterable[sqlalchemy.Engine]:
+    url = f"sqlite+pysqlite:///{tmp_path / 'test.db'}"
     engine = sqlalchemy.create_engine(
         url,
-        poolclass=StaticPool,
         connect_args={"check_same_thread": False}
     )
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(bind=engine)
 
     try:
@@ -43,23 +51,33 @@ def db_session(db_engine: sqlalchemy.Engine) -> Iterable[orm.Session]:
 
 
 @pytest.fixture
-def client(db_session: orm.Session) -> Iterable[TestClient]:
+def client(db_engine: sqlalchemy.Engine) -> Iterable[TestClient]:
+    async_engine = create_async_engine(
+        db_engine.url.set(drivername="sqlite+aiosqlite"),
+        poolclass=NullPool,
+    )
 
-    def override_get_db_session():
-        try:
-            yield db_session
-            db_session.commit()
-        except Exception:
-            db_session.rollback()
-            raise
-
+    @event.listens_for(async_engine.sync_engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+    async_session_factory = async_sessionmaker(async_engine, expire_on_commit=False)
+    async def override_get_db_session():
+        async with async_session_factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
     app.dependency_overrides[get_db_session] = override_get_db_session
-    client = TestClient(app)
     try:
-        yield client
+        with TestClient(app) as test_client:
+            yield test_client
     finally:
         app.dependency_overrides.pop(get_db_session, None)
-        client.close()
+        asyncio.run(async_engine.dispose())
 
 @pytest.fixture
 def user(

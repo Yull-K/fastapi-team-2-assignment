@@ -12,13 +12,13 @@ from wapang.app.stores.services import StoreService
 store_router = APIRouter()
 
 @store_router.post("/", status_code=status.HTTP_201_CREATED)
-def add_store(
+async def add_store(
     add_request: StoreAddRequest, 
     # 유저 토큰 확인
     user: Annotated[User, Depends(login_with_header)],
     store_service: Annotated[StoreService, Depends()]
 ) -> StoreResponse:
-    store = store_service.create_store(
+    store = await store_service.create_store(
         user.id,
         add_request.store_name, 
         add_request.address, 
@@ -36,13 +36,13 @@ def add_store(
     )
 
 @store_router.patch("/{store_id}")
-def update_store(
+async def update_store(
     store_id: str,
     update_request: StoreUpdateRequest,
     user: Annotated[User, Depends(login_with_header)],
     store_service: Annotated[StoreService, Depends()]
 ) -> StoreResponse:
-    updated_store = store_service.update_store(
+    updated_store = await store_service.update_store(
         store_id,
         user.id,
         update_request.store_name,
@@ -55,17 +55,17 @@ def update_store(
 
     
 @store_router.get("/{store_id}")
-def get_store(
+async def get_store(
     store_id: str,
     store_service: Annotated[StoreService, Depends()]
 ) -> StoreResponse:
-    store = store_service.get_store_by_id(store_id)
+    store = await store_service.get_store_by_id(store_id)
     return StoreResponse.model_validate(store)
 
 @store_router.get("/{store_id}/items")
-def get_items(
+async def get_items(
     store_id: str,
     store_service: Annotated[StoreService, Depends()]
 ) -> list[ItemResponse]:
-    items = store_service.get_store_items(store_id)
+    items = await store_service.get_store_items(store_id)
     return [ItemResponse.model_validate(item) for item in items]

@@ -5,10 +5,13 @@ description = "FastAPI seminar assignment 4: three-person Wapang project"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiosqlite>=0.22.1",
     "alembic>=1.16.5",
     "argon2-cffi>=25.1.0",
+    "asyncmy>=0.2.18",
     "authlib>=1.6.4",
     "fastapi[standard]>=0.117.1",
+    "greenlet>=3.2.4",
     "pydantic-settings>=2.10.1",
     "pymysql>=1.1.2",
     "pytest>=8.4.2",
